@@ -14,14 +14,17 @@ export default function ReviewPage() {
   const [confirming, setConfirming] = useState(false);
   const [statusFilter, setStatusFilter] = useState('pending');
   const [ownerFilter, setOwnerFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [successMsg, setSuccessMsg] = useState('');
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page), pageSize: '50' });
+      const params = new URLSearchParams({ page: String(page), pageSize: '50', sort: sortDir });
       if (statusFilter) params.set('status', statusFilter);
       if (ownerFilter) params.set('owner', ownerFilter);
+      if (categoryFilter) params.set('category', categoryFilter);
 
       const res = await fetch(`/api/transactions?${params}`);
       const data = await res.json();
@@ -33,7 +36,7 @@ export default function ReviewPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, statusFilter, ownerFilter]);
+  }, [page, statusFilter, ownerFilter, categoryFilter, sortDir]);
 
   useEffect(() => {
     fetchTransactions();
@@ -100,6 +103,25 @@ export default function ReviewPage() {
                 <option value="Rodrigo">Rodrigo</option>
                 <option value="Mariana">Mariana</option>
               </select>
+              <select
+                value={categoryFilter}
+                onChange={e => { setCategoryFilter(e.target.value); setPage(1); }}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">Todas as categorias</option>
+                <option value="none">Sem categoria</option>
+                <option value="Casa">Casa</option>
+                <option value="Saúde">Saúde</option>
+                <option value="Supermercado">Supermercado</option>
+                <option value="Restaurantes">Restaurantes</option>
+                <option value="Carro">Carro</option>
+                <option value="Escola">Escola</option>
+                <option value="Miúdos">Miúdos</option>
+                <option value="Viagens">Viagens</option>
+                <option value="Vestuário">Vestuário</option>
+                <option value="Outros">Outros</option>
+                <option value="Ordenados">Ordenados</option>
+              </select>
               <button
                 onClick={handleConfirmAll}
                 disabled={confirming}
@@ -121,7 +143,14 @@ export default function ReviewPage() {
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="text-left py-3 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Data</th>
+                    <th className="text-left py-3 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                      <button
+                        onClick={() => { setSortDir(d => d === 'desc' ? 'asc' : 'desc'); setPage(1); }}
+                        className="flex items-center gap-1 hover:text-gray-700"
+                      >
+                        Data {sortDir === 'desc' ? '↓' : '↑'}
+                      </button>
+                    </th>
                     <th className="text-left py-3 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Descrição</th>
                     <th className="text-left py-3 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Banco</th>
                     <th className="text-left py-3 px-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Quem</th>

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { transactions } from '@/lib/schema';
-import { eq, and, like, sql } from 'drizzle-orm';
+import { eq, and, like, sql, asc, desc, isNull } from 'drizzle-orm';
 
 export async function GET(request: Request) {
   try {
@@ -10,6 +10,8 @@ export async function GET(request: Request) {
     const owner = searchParams.get('owner');
     const bank = searchParams.get('bank');
     const status = searchParams.get('status');
+    const category = searchParams.get('category');
+    const sortDir = searchParams.get('sort') === 'asc' ? 'asc' : 'desc';
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '50');
 
@@ -27,14 +29,20 @@ export async function GET(request: Request) {
     if (status) {
       conditions.push(eq(transactions.status, status));
     }
+    if (category === 'none') {
+      conditions.push(isNull(transactions.category));
+    } else if (category) {
+      conditions.push(eq(transactions.category, category));
+    }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const order = sortDir === 'asc' ? asc(transactions.date) : desc(transactions.date);
 
     const [countResult, rows] = await Promise.all([
       db.select({ count: sql<number>`count(*)` }).from(transactions).where(where),
       db.select().from(transactions)
         .where(where)
-        .orderBy(sql`${transactions.date} DESC`)
+        .orderBy(order)
         .limit(pageSize)
         .offset((page - 1) * pageSize),
     ]);
