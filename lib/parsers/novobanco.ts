@@ -1,365 +1,230 @@
+import { extractPdfLines, type PdfLine } from './pdf-extract';
 import type { NewTransaction } from '../schema';
 
-// Parse European number format: 1.234,56 → 1234.56
 function parseEuropeanNumber(str: string): number {
-  // Remove dots (thousands separators) and replace comma with dot
   return parseFloat(str.replace(/\./g, '').replace(',', '.'));
 }
 
-// Extract year from statement header
-function extractYear(text: string): number {
-  // Try "Extrato Integrado nº X/YYYY"
-  const match1 = text.match(/Extrato Integrado\s+n[ºo°]\s*\d+\/(\d{4})/i);
-  if (match1) return parseInt(match1[1]);
-
-  // Try "de DD.MM.YYYY a DD.MM.YYYY"
-  const match2 = text.match(/de \d{2}\.\d{2}\.(\d{4})/i);
-  if (match2) return parseInt(match2[1]);
-
-  // Try 2-digit year pattern in dates: DD.MM.YY
-  const match3 = text.match(/\d{2}\.\d{2}\.(\d{2})/);
-  if (match3) {
-    const y = parseInt(match3[1]);
-    return y + 2000;
-  }
-
-  return new Date().getFullYear();
+function isEuropeanNumber(str: string): boolean {
+  return /^\d{1,3}(?:\.\d{3})*,\d{2}$/.test(str.trim());
 }
 
-// Convert DD.MM.YY to YYYY-MM-DD
-function parseDate(d: string, m: string, y: string): string {
-  const year = parseInt(y) + 2000;
-  return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+function formatDate(dd: string, mm: string, yy: string): string {
+  const year = 2000 + parseInt(yy);
+  return `${year}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
 }
 
-const SKIP_SECTIONS = [
-  'CT PP HABITACAO',
-  'CONTA 360° POUPANCA',
-  'CONTA MICRO POUPANCA',
-  'AVISOS DE LANÇAMENTO',
-  'AVISOS DE LANCAMENTO',
-  'CRÉDITO HABITAÇÃO',
-  'CREDITO HABITACAO',
-  'OUTRO CRÉDITO',
-  'OUTRO CREDITO',
-  'DETALHE DO PATRIMÓNIO',
-  'DETALHE DO PATRIMONIO',
+const STOP_SECTIONS = [
+  /CT\s+PP\s+HABITAC/i,
+  /CONTA\s+360[°]?\s+POUPAN/i,
+  /CONTA\s+MICRO\s+POURAN/i,
+  /CONTA\s+MICRO\s+POUPAN/i,
+  /AVISOS\s+DE\s+LAN/i,
+  /CRÉDITO\s+HABITAÇ/i,
+  /CREDITO\s+HABITAC/i,
+  /OUTRO\s+CRÉDIT/i,
+  /DETALHE\s+DO\s+PATRIM/i,
+  /DEPÓSITOS\s+À\s+ORDEM/i,
+  /DEPÓSITOS\s+POUPANÇA/i,
+  /FUNDOS\s+DE\s+INVEST/i,
+  /SEGUROS/i,
 ];
 
-export function parseNovoBanco(text: string, bank: string = 'novobanco', owner: string = 'Rodrigo', importBatch: string = ''): NewTransaction[] {
-  const year = extractYear(text);
-  const lines = text.split('\n');
+// Check if line text is transaction noise to skip
+function isNoise(text: string): boolean {
+  return /micro\s+poupan/i.test(text);
+}
 
-  // Find the CONTA 360° - DO section
-  let sectionStart = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes('CONTA 360°') && lines[i].includes('DO')) {
-      sectionStart = i;
-      break;
+// Parse amounts from a NovoBanco transaction line using x-position columns:
+//   debit  → x in [debitX - margin, midpoint)
+//   credit → x in [midpoint, balanceX - margin)
+//   balance → x >= balanceX - margin
+// Returns { debit, credit, balance, description }
+function parseAmountsFromLine(
+  items: PdfLine['items'],
+  debitCreditMid: number,
+  balanceX: number
+): { debit: number | null; credit: number | null; balance: number | null; description: string } {
+  // Separate description items (x < debitStartX ≈ 300) from amount items
+  const descItems: string[] = [];
+  const debitParts: string[] = [];
+  const creditParts: string[] = [];
+  const balanceParts: string[] = [];
+
+  // Skip the two date items at the beginning (x < 100)
+  let dateCount = 0;
+  for (const item of items) {
+    if (dateCount < 2 && item.x < 100 && /^\d{2}\.\d{2}\.\d{2}$/.test(item.str.trim())) {
+      dateCount++;
+      continue;
     }
-  }
-
-  if (sectionStart === -1) {
-    // Try alternative
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].match(/CONTA 360/i) && !lines[i].includes('POUPANCA') && !lines[i].includes('MICRO')) {
-        sectionStart = i;
-        break;
+    if (item.x < 300) {
+      // Description or sidebar text — only include if not pure sidebar noise
+      if (item.x >= 100) descItems.push(item.str);
+    } else if (isEuropeanNumber(item.str)) {
+      if (item.x < debitCreditMid) {
+        debitParts.push(item.str);
+      } else if (item.x < balanceX) {
+        creditParts.push(item.str);
+      } else {
+        balanceParts.push(item.str);
       }
+    } else {
+      // Non-number item in the amount area — part of description
+      if (item.x < 300) descItems.push(item.str);
     }
   }
 
-  if (sectionStart === -1) return [];
+  const debit = debitParts.length > 0 ? parseEuropeanNumber(debitParts[debitParts.length - 1]) : null;
+  const credit = creditParts.length > 0 ? parseEuropeanNumber(creditParts[creditParts.length - 1]) : null;
+  const balance = balanceParts.length > 0 ? parseEuropeanNumber(balanceParts[balanceParts.length - 1]) : null;
+  const description = descItems.join(' ').trim();
 
-  // Find section end (next major section header)
-  let sectionEnd = lines.length;
-  for (let i = sectionStart + 1; i < lines.length; i++) {
-    const line = lines[i].toUpperCase();
-    if (SKIP_SECTIONS.some(s => line.includes(s))) {
-      sectionEnd = i;
-      break;
-    }
-  }
+  return { debit, credit, balance, description };
+}
 
-  const sectionLines = lines.slice(sectionStart, sectionEnd);
-
-  // Date pattern: DD.MM.YY
-  const datePattern = /^(\d{2})\.(\d{2})\.(\d{2})\s+(\d{2})\.(\d{2})\.(\d{2})\s+(.*)/;
-
+export async function parseNovoBancoPdf(buffer: Buffer, importBatch: string): Promise<NewTransaction[]> {
+  const lines = await extractPdfLines(buffer);
   const transactions: NewTransaction[] = [];
-  let i = 0;
 
-  while (i < sectionLines.length) {
-    const line = sectionLines[i];
-    const match = line.match(datePattern);
+  let inSection = false;
+  // Default column thresholds (calibrated from observed x positions in sample PDFs)
+  // Débito header ≈ x 351–381, Crédito header ≈ x 419–448, Saldo ≈ x 477–507
+  let debitCreditMid = 415;
+  let balanceX = 490;
 
-    if (match) {
-      const dateStr = parseDate(match[1], match[2], match[3]);
-      const valueDateStr = parseDate(match[4], match[5], match[6]);
-      let rest = match[7].trim();
+  // We process line by line; when we find a transaction line we may append continuation
+  let pendingTx: {
+    date: string;
+    valueDate: string;
+    descLines: string[];
+    debit: number | null;
+    credit: number | null;
+    balance: number | null;
+  } | null = null;
 
-      // Check for wrapped description lines
-      let j = i + 1;
-      while (j < sectionLines.length) {
-        const nextLine = sectionLines[j].trim();
-        // If next line starts with a date pattern, stop
-        if (nextLine.match(/^\d{2}\.\d{2}\.\d{2}/)) break;
-        // If next line looks like amounts only or is empty, stop
-        if (!nextLine || nextLine.match(/^[\d.,\s]+$/)) {
-          // Check if it's a balance/amount continuation
-          break;
-        }
-        // Otherwise it might be a description continuation
-        // But we need to be careful: amounts are at the end of the line
-        rest = rest + ' ' + nextLine;
-        j++;
-      }
-      i = j;
-
-      // Parse the rest: description + optional debit + optional credit + balance
-      // Numbers can look like: 1.234,56 or 19,00
-      // The last number is balance, before that is debit or credit
-      const numPattern = /(\d{1,3}(?:\.\d{3})*,\d{2})/g;
-      const numbers: string[] = [];
-      let descriptionEnd = rest.length;
-
-      // Find all numbers
-      let numMatch;
-      const numMatches: Array<{ index: number; value: string }> = [];
-      while ((numMatch = numPattern.exec(rest)) !== null) {
-        numMatches.push({ index: numMatch.index, value: numMatch[0] });
-      }
-
-      let debit: number | null = null;
-      let credit: number | null = null;
-      let balance: number | null = null;
-      let description = rest;
-
-      if (numMatches.length >= 2) {
-        // Last is balance
-        balance = parseEuropeanNumber(numMatches[numMatches.length - 1].value);
-        // Second to last is debit or credit
-        const amountStr = numMatches[numMatches.length - 2].value;
-        const amount = parseEuropeanNumber(amountStr);
-
-        // Description is everything before the first number
-        descriptionEnd = numMatches[0].index;
-        description = rest.substring(0, descriptionEnd).trim();
-
-        // Determine if debit or credit based on context
-        // Check if there's a sign or if we can infer from position
-        // NovoBanco format: Débito | Crédito | Saldo
-        // If only 2 numbers: we have amount + balance
-        // If 3 numbers: debit + credit + balance (but usually one is blank)
-
-        if (numMatches.length === 2) {
-          // Need to determine from context - check if balance went up or down
-          // Can't determine without previous balance, so use description/context
-          // By default treat as debit (expense)
-          debit = amount;
-        } else if (numMatches.length >= 3) {
-          // Could be debit + blank credit + balance or blank debit + credit + balance
-          // The two amounts before balance are at positions length-3 and length-2
-          const firstAmount = parseEuropeanNumber(numMatches[numMatches.length - 3].value);
-          const secondAmount = parseEuropeanNumber(numMatches[numMatches.length - 2].value);
-          // We need to figure out which column each belongs to
-          // Check positional context in original line
-          debit = firstAmount;
-          credit = null;
-          // Actually with the text parsing, it's hard to distinguish columns
-          // Use balance change: if balance went up, it's credit
-        }
-      } else if (numMatches.length === 1) {
-        balance = parseEuropeanNumber(numMatches[0].value);
-        description = rest.substring(0, numMatches[0].index).trim();
-      }
-
-      // Skip noise transactions
-      if (description.toLowerCase().includes('micro poupança arredond') ||
-          description.toLowerCase().includes('micro poupanca arredond')) {
-        continue;
-      }
-
-      // Skip if no meaningful description
-      if (!description || description.length < 2) continue;
-
+  function flushPending() {
+    if (!pendingTx) return;
+    const desc = pendingTx.descLines.join(' ').replace(/\s+/g, ' ').trim();
+    if (desc.length >= 2 && !isNoise(desc)) {
       transactions.push({
         id: '',
-        date: dateStr,
-        value_date: valueDateStr,
-        description: description.trim(),
-        debit,
-        credit,
-        balance,
-        bank,
-        owner,
+        date: pendingTx.date,
+        value_date: pendingTx.valueDate,
+        description: desc,
+        debit: pendingTx.debit,
+        credit: pendingTx.credit,
+        balance: pendingTx.balance,
+        bank: 'novobanco',
+        owner: 'Rodrigo',
         category: null,
         subcategory: null,
         status: 'pending',
         import_batch: importBatch,
         created_at: new Date().toISOString(),
       });
-    } else {
-      i++;
     }
+    pendingTx = null;
   }
 
-  return transactions;
-}
+  for (const line of lines) {
+    const { text, items } = line;
 
-// More robust parser that handles the actual PDF text layout
-export function parseNovoBancoRobust(text: string, importBatch: string = ''): NewTransaction[] {
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-
-  const year = extractYear(text);
-
-  // Find CONTA 360° - DO section
-  let sectionStart = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if ((lines[i].includes('CONTA 360°') || lines[i].includes('CONTA 360')) &&
-        (lines[i].includes('DO') || lines[i+1]?.includes('DO'))) {
-      sectionStart = i;
-      break;
-    }
-  }
-
-  if (sectionStart === -1) return [];
-
-  // Find section end
-  let sectionEnd = lines.length;
-  for (let i = sectionStart + 5; i < lines.length; i++) {
-    const upper = lines[i].toUpperCase();
-    if (SKIP_SECTIONS.some(s => upper.includes(s.toUpperCase()))) {
-      sectionEnd = i;
-      break;
-    }
-    // Also stop at SALDO FINAL or summary lines
-    if (upper.includes('TOTAL MOVIMENTO') || upper.includes('SALDO FINAL')) {
-      // Don't stop here, these are within the section
-    }
-  }
-
-  const sectionLines = lines.slice(sectionStart, sectionEnd);
-
-  // Pattern: line starts with DD.MM.YY DD.MM.YY
-  const txPattern = /^(\d{2})\.(\d{2})\.(\d{2})\s+(\d{2})\.(\d{2})\.(\d{2})\s+(.+)$/;
-  const numPattern = /\d{1,3}(?:\.\d{3})*,\d{2}/g;
-
-  const transactions: NewTransaction[] = [];
-
-  for (let i = 0; i < sectionLines.length; i++) {
-    const line = sectionLines[i];
-    const match = line.match(txPattern);
-
-    if (!match) continue;
-
-    const day1 = match[1], mon1 = match[2], yr1 = match[3];
-    const day2 = match[4], mon2 = match[5], yr2 = match[6];
-    const rest = match[7];
-
-    const dateStr = parseDate(day1, mon1, yr1);
-    const valueDateStr = parseDate(day2, mon2, yr2);
-
-    // Collect description + numbers
-    let fullRest = rest;
-
-    // Check continuation lines
-    let j = i + 1;
-    while (j < sectionLines.length) {
-      const nextLine = sectionLines[j];
-      if (nextLine.match(/^\d{2}\.\d{2}\.\d{2}/)) break;
-      // If the line has numbers that look like amounts with European format
-      const hasDate = nextLine.match(/^\d{2}\.\d{2}\.\d{2}/);
-      if (hasDate) break;
-      // Append if it looks like a description continuation (not just numbers)
-      if (!nextLine.match(/^[\d.,\s]+$/) && !nextLine.match(/^SALDO/i) && !nextLine.match(/^TOTAL/i)) {
-        fullRest += ' ' + nextLine;
-        j++;
-      } else {
-        break;
+    // Detect CONTA 360° - DO section start
+    if (!inSection) {
+      if (
+        (text.includes('CONTA 360°') || text.includes('CONTA 360')) &&
+        text.includes('DO') &&
+        !text.includes('POUPAN') &&
+        !text.includes('MICRO')
+      ) {
+        inSection = true;
       }
-    }
-    i = j - 1;
-
-    // Extract numbers from the full rest
-    const allNums: string[] = [];
-    let numMatch;
-    const numRe = /(\d{1,3}(?:\.\d{3})*,\d{2})/g;
-    while ((numMatch = numRe.exec(fullRest)) !== null) {
-      allNums.push(numMatch[0]);
-    }
-
-    // Find where numbers start in the string
-    const firstNumIdx = fullRest.search(/\d{1,3}(?:\.\d{3})*,\d{2}/);
-    const description = firstNumIdx > 0 ? fullRest.substring(0, firstNumIdx).trim() : fullRest.trim();
-
-    // Skip noise
-    if (description.toLowerCase().includes('micro poupança') ||
-        description.toLowerCase().includes('micro poupanca')) {
       continue;
     }
 
-    if (!description || description.length < 3) continue;
-
-    let debit: number | null = null;
-    let credit: number | null = null;
-    let balance: number | null = null;
-
-    if (allNums.length >= 2) {
-      balance = parseEuropeanNumber(allNums[allNums.length - 1]);
-      const amount = parseEuropeanNumber(allNums[allNums.length - 2]);
-
-      // Determine debit vs credit: if we have 3+ numbers, the structure is
-      // possibly: debit credit balance OR just amount balance
-      // We'll use a heuristic: check if "TRF CRED" or credit indicators in description
-      const isCredit = description.toUpperCase().includes('TRF CRED') ||
-                       description.toUpperCase().includes('TRANSFERENCIA A FAVOR') ||
-                       description.toUpperCase().includes('VENCIMENTO') ||
-                       description.toUpperCase().includes('HIKMA') ||
-                       description.toUpperCase().includes('SALARIO') ||
-                       description.toUpperCase().includes('REEMBOLSO');
-
-      if (allNums.length >= 3) {
-        // Could have both debit and credit columns
-        // Try to figure out by position or use the two non-balance amounts
-        const secondLast = parseEuropeanNumber(allNums[allNums.length - 2]);
-        const thirdLast = parseEuropeanNumber(allNums[allNums.length - 3]);
-
-        // Heuristic: one of them is 0-ish or the transaction amount
-        // Use description to determine
-        if (isCredit) {
-          credit = secondLast;
-        } else {
-          debit = secondLast;
-        }
-      } else {
-        if (isCredit) {
-          credit = amount;
-        } else {
-          debit = amount;
-        }
-      }
-    } else if (allNums.length === 1) {
-      balance = parseEuropeanNumber(allNums[0]);
+    // Detect section end
+    if (STOP_SECTIONS.some((p) => p.test(text))) {
+      flushPending();
+      inSection = false;
+      continue;
     }
 
-    transactions.push({
-      id: '',
-      date: dateStr,
-      value_date: valueDateStr,
-      description,
-      debit,
-      credit,
-      balance,
-      bank: 'novobanco',
-      owner: 'Rodrigo',
-      category: null,
-      subcategory: null,
-      status: 'pending',
-      import_batch: importBatch,
-      created_at: new Date().toISOString(),
-    });
+    // Calibrate column thresholds from the header row
+    if (/Débit/i.test(text) && /Crédit/i.test(text)) {
+      const debitItem = items.find((i) => /Débit/i.test(i.str));
+      const creditItem = items.find((i) => /Crédit/i.test(i.str));
+      const saldoItem = items.find((i) => /Saldo/i.test(i.str));
+      if (debitItem && creditItem) {
+        debitCreditMid = (debitItem.x + creditItem.x) / 2;
+      }
+      if (saldoItem) {
+        balanceX = saldoItem.x - 10;
+      }
+      continue;
+    }
+
+    // Skip non-transaction lines (headers, totals, blank pages)
+    if (/^(SALDO|TOTAL|EXTRATO|CONTA 360|Data|Valor|CONTA MILLENNIUM)/i.test(text.trim())) {
+      flushPending();
+      continue;
+    }
+
+    // Skip SALDO ANTERIOR line (not a real transaction)
+    if (/SALDO\s+ANTERIOR/i.test(text)) {
+      continue;
+    }
+
+    // Detect a new transaction line: first item x < 50 and matches DD.MM.YY
+    const firstItem = items[0];
+    const txDateMatch = firstItem?.str.trim().match(/^(\d{2})\.(\d{2})\.(\d{2})$/);
+
+    if (txDateMatch && firstItem.x < 50) {
+      // Find second date item (x ≈ 67)
+      const secondDateItem = items.find(
+        (i) => i !== firstItem && i.x < 100 && /^\d{2}\.\d{2}\.\d{2}$/.test(i.str.trim())
+      );
+      const dateMatch2 = secondDateItem?.str.trim().match(/^(\d{2})\.(\d{2})\.(\d{2})$/);
+
+      flushPending();
+
+      const date = formatDate(txDateMatch[1], txDateMatch[2], txDateMatch[3]);
+      const valueDate = dateMatch2
+        ? formatDate(dateMatch2[1], dateMatch2[2], dateMatch2[3])
+        : date;
+
+      // Parse amounts
+      const { debit, credit, balance, description } = parseAmountsFromLine(
+        items,
+        debitCreditMid,
+        balanceX
+      );
+
+      // Skip noise immediately
+      if (isNoise(description)) continue;
+
+      pendingTx = {
+        date,
+        valueDate,
+        descLines: description ? [description] : [],
+        debit,
+        credit,
+        balance,
+      };
+    } else if (pendingTx) {
+      // Continuation line: items start at x ≈ 109 with no date prefix
+      // Filter out sidebar watermark text (very small x or very large x)
+      const contText = items
+        .filter((i) => i.x >= 100 && i.x < 350 && !isEuropeanNumber(i.str))
+        .map((i) => i.str)
+        .join(' ')
+        .trim();
+      if (contText) {
+        pendingTx.descLines.push(contText);
+      }
+    }
   }
 
+  flushPending();
   return transactions;
 }

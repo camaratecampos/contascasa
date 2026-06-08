@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import pdfParse from 'pdf-parse';
 import { parseTransactions } from '@/lib/parsers';
 import { classifyTransactions } from '@/lib/classifier';
 import { db } from '@/lib/db';
@@ -16,19 +15,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Nenhum ficheiro enviado' }, { status: 400 });
     }
 
-    let allParsed: ReturnType<typeof parseTransactions>['transactions'] = [];
-    let totalFiltered = 0;
+    let allParsed: Awaited<ReturnType<typeof parseTransactions>>['transactions'] = [];
     const banks: string[] = [];
 
     for (const file of files) {
       const buffer = Buffer.from(await file.arrayBuffer());
-      const pdfData = await pdfParse(buffer);
-      const text = pdfData.text;
-
-      const { transactions: parsed, bank } = parseTransactions(text, nanoid());
-
-      // Count lines that would have been filtered (noise)
-      // The parser already filters internally; we estimate 0 additional filtered
+      const { transactions: parsed, bank } = await parseTransactions(buffer, nanoid());
       allParsed = allParsed.concat(parsed);
       banks.push(bank);
     }
@@ -46,15 +38,11 @@ export async function POST(request: Request) {
 
     const { unique, duplicateCount } = filterDuplicates(classified, existingRaw);
 
-    // Assign IDs to unique transactions
-    const withIds = unique.map(tx => ({
-      ...tx,
-      id: nanoid(),
-    }));
+    const withIds = unique.map(tx => ({ ...tx, id: nanoid() }));
 
     return NextResponse.json({
       transactions: withIds,
-      filtered: totalFiltered,
+      filtered: 0,
       duplicates: duplicateCount,
       banks,
     });
@@ -66,3 +54,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

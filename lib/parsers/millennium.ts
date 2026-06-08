@@ -1,189 +1,209 @@
+import { extractPdfLines, type PdfLine } from './pdf-extract';
 import type { NewTransaction } from '../schema';
 
-// Parse Millennium number format: "1 042.47" → 1042.47
-function parseMillenniumNumber(str: string): number {
-  // Remove spaces (thousands separator) and parse
-  return parseFloat(str.replace(/\s/g, '').replace(',', '.'));
+// Millennium amounts use period as decimal: "1 042.47" or "86.04"
+// Saldo is split into two items: "3" + "303.78" → 3303.78
+function parseMillenniumAmount(parts: string[]): number {
+  // Join all parts, remove spaces, parse as float
+  const joined = parts.join('').replace(/\s/g, '');
+  return parseFloat(joined);
 }
 
-// Extract year from "EXTRATO DE YYYY/MM/DD A YYYY/MM/DD"
-function extractYear(text: string): number {
-  const match = text.match(/EXTRATO\s+DE\s+(\d{4})\/\d{2}\/\d{2}/i);
-  if (match) return parseInt(match[1]);
+// Millennium format: M.DD (e.g. "5.04" = May 4th, "12.31" = Dec 31st)
+function formatDate(monthDay: string, year: number): string {
+  const [m, d] = monthDay.split('.');
+  return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+}
 
-  // Alternative: look for 4-digit year anywhere in header context
-  const match2 = text.match(/(\d{4})\/\d{2}\/\d{2}/);
-  if (match2) return parseInt(match2[1]);
-
+function extractYear(lines: PdfLine[]): number {
+  for (const line of lines) {
+    // "EXTRATO DE YYYY/MM/DD A YYYY/MM/DD"
+    const m = line.text.match(/EXTRATO\s+DE\s+(\d{4})\/\d{2}\/\d{2}/i);
+    if (m) return parseInt(m[1]);
+    const m2 = line.text.match(/N\.\s+(\d{4})\/(\d{3})/);
+    if (m2) return parseInt(m2[1]);
+  }
   return new Date().getFullYear();
 }
 
-// Extract month from date range
-function extractMonth(text: string, year: number): number | null {
-  const match = text.match(/EXTRATO\s+DE\s+\d{4}\/(\d{2})\/\d{2}/i);
-  if (match) return parseInt(match[1]);
-  return null;
+// x-column thresholds for Millennium:
+// DEBITO: x in [290, 400)
+// CREDITO: x in [400, 510)
+// SALDO: x >= 510
+const DEBIT_MAX_X = 400;
+const CREDIT_MAX_X = 510;
+
+function parseMillenniumDataLine(items: PdfLine['items']): {
+  date1: string;
+  date2: string;
+  debit: number | null;
+  credit: number | null;
+  balance: number | null;
+} | null {
+  // Data line: two dates at x≈57 and x≈87, then amounts
+  const dateItems = items.filter((i) => i.x < 110 && /^\d{1,2}\.\d{2}$/.test(i.str.trim()));
+  if (dateItems.length < 2) return null;
+
+  const date1 = dateItems[0].str.trim();
+  const date2 = dateItems[1].str.trim();
+
+  // Numeric items (not dates)
+  const numItems = items.filter(
+    (i) => i.x >= 250 && /^[\d.]+$/.test(i.str.trim().replace(/\s/g, ''))
+  );
+
+  const debitParts: string[] = [];
+  const creditParts: string[] = [];
+  const balanceParts: string[] = [];
+
+  for (const item of numItems) {
+    if (item.x < DEBIT_MAX_X) {
+      debitParts.push(item.str.trim());
+    } else if (item.x < CREDIT_MAX_X) {
+      creditParts.push(item.str.trim());
+    } else {
+      balanceParts.push(item.str.trim());
+    }
+  }
+
+  const debit = debitParts.length > 0 ? parseMillenniumAmount(debitParts) : null;
+  const credit = creditParts.length > 0 ? parseMillenniumAmount(creditParts) : null;
+  const balance = balanceParts.length > 0 ? parseMillenniumAmount(balanceParts) : null;
+
+  // Must have at least balance
+  if (balance === null && debit === null && credit === null) return null;
+
+  return { date1, date2, debit, credit, balance };
 }
 
-// Convert D.MM to YYYY-MM-DD
-function parseDate(dayMonth: string, year: number, headerMonth: number | null): string {
-  const parts = dayMonth.split('.');
-  if (parts.length !== 2) return `${year}-01-01`;
-
-  const day = parseInt(parts[0]);
-  const month = parseInt(parts[1]);
-
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-}
-
-const SKIP_SECTIONS = [
-  'APLICACOES FINANCEIRAS',
-  'APLICAÇÕES FINANCEIRAS',
-  'CARTEIRA DE SEGUROS',
-  'AGENDA',
+const STOP_SECTIONS = [
+  /APLICAC[OÕ]ES\s+FINANCEIRAS/i,
+  /CARTEIRA\s+DE\s+SEGUROS/i,
+  /DEPOSITOS\s+A\s+PRAZO/i,
+  /RESUMO\s+DO\s+EXTRATO/i,
 ];
 
-export function parseMillennium(text: string, importBatch: string = ''): NewTransaction[] {
-  const year = extractYear(text);
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-
-  // Find CONTA MILLENNIUM section
-  let sectionStart = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].toUpperCase().includes('CONTA MILLENNIUM')) {
-      sectionStart = i;
-      break;
-    }
-  }
-
-  if (sectionStart === -1) return [];
-
-  // Find section end
-  let sectionEnd = lines.length;
-  for (let i = sectionStart + 1; i < lines.length; i++) {
-    const upper = lines[i].toUpperCase();
-    if (SKIP_SECTIONS.some(s => upper.includes(s))) {
-      sectionEnd = i;
-      break;
-    }
-  }
-
-  const sectionLines = lines.slice(sectionStart, sectionEnd);
-
-  // Transaction line pattern: D.MM or DD.MM at start
-  // FORMAT: DATA LANC. | DATA VALOR | DESCRITIVO | DEBITO | CREDITO | SALDO
-  // Example: "5.04  5.02  TRF. P/O JOANA BARROS  15.00  3 303.78"
-  // Date pattern: number.number (1-2 digits . 2 digits)
-  const datePattern = /^(\d{1,2}\.\d{2})\s+(\d{1,2}\.\d{2})\s+(.+)$/;
-
-  // Amount pattern for Millennium: numbers with optional space thousands sep
-  // e.g. "1 042.47" or "86.04" or "15.00" or "3 303.78"
-  const amountPattern = /\d{1,3}(?:\s\d{3})*\.\d{2}/g;
-
+export async function parseMillenniumPdf(buffer: Buffer, importBatch: string): Promise<NewTransaction[]> {
+  const lines = await extractPdfLines(buffer);
+  const year = extractYear(lines);
   const transactions: NewTransaction[] = [];
 
-  for (let i = 0; i < sectionLines.length; i++) {
-    const line = sectionLines[i];
+  let inSection = false;
 
-    // Skip headers, SALDO INICIAL/FINAL lines
-    if (line.toUpperCase().includes('SALDO INICIAL') ||
-        line.toUpperCase().includes('SALDO FINAL') ||
-        line.toUpperCase().includes('DATA LANC') ||
-        line.toUpperCase().includes('DESCRITIVO') ||
-        line.toUpperCase().includes('DEBITO') ||
-        line.toUpperCase().includes('EXTRATO')) {
+  // In Millennium, the description line (y=N) comes just above its data line (y=N-0.5 or N-1)
+  // We pair them by adjacency: description line has items starting at x≈114,
+  // data line has date items at x≈57.
+  // Strategy: collect all lines in the section, then pair them.
+
+  const sectionLines: PdfLine[] = [];
+
+  for (const line of lines) {
+    if (!inSection) {
+      if (/CONTA\s+MILLENNIUM/i.test(line.text)) {
+        inSection = true;
+      }
       continue;
     }
 
-    const match = line.match(datePattern);
-    if (!match) continue;
-
-    const dateStr = parseDate(match[1], year, null);
-    const valueDateStr = parseDate(match[2], year, null);
-    let rest = match[3].trim();
-
-    // Collect continuation lines
-    let j = i + 1;
-    while (j < sectionLines.length) {
-      const nextLine = sectionLines[j];
-      if (nextLine.match(/^\d{1,2}\.\d{2}\s/)) break;
-      if (nextLine.toUpperCase().includes('SALDO')) break;
-      // If it looks like pure numbers, break
-      if (nextLine.match(/^\d[\d\s.]+$/)) break;
-      rest += ' ' + nextLine;
-      j++;
-    }
-    i = j - 1;
-
-    // Extract all amounts from the line
-    const amounts: string[] = [];
-    let amtMatch;
-    const amtRe = /(\d{1,3}(?:\s\d{3})*\.\d{2})/g;
-    while ((amtMatch = amtRe.exec(rest)) !== null) {
-      amounts.push(amtMatch[0]);
+    if (STOP_SECTIONS.some((p) => p.test(line.text))) {
+      inSection = false;
+      break;
     }
 
-    // Find where numbers start
-    const firstNumIdx = rest.search(/\d{1,3}(?:\s\d{3})*\.\d{2}/);
-    const description = firstNumIdx > 0 ? rest.substring(0, firstNumIdx).trim() : rest.trim();
+    sectionLines.push(line);
+  }
 
-    if (!description || description.length < 2) continue;
+  // Process section lines: pair each description line with its data line
+  // A "data line" has two date items at x < 110
+  // A "description line" has items starting at x ≈ 114 without dates at x < 110
 
-    let debit: number | null = null;
-    let credit: number | null = null;
-    let balance: number | null = null;
+  // Build index: for each data line, find the description line just above it
+  // (same page, y slightly higher = larger y value since y decreases top to bottom?
+  //  Actually in pdfjs, y increases from bottom of page. So top of page has higher y.)
+  // Description line y > data line y by ~0.5–1 unit, both on same page.
 
-    if (amounts.length >= 2) {
-      balance = parseMillenniumNumber(amounts[amounts.length - 1]);
-      const amount = parseMillenniumNumber(amounts[amounts.length - 2]);
+  // Group lines by page
+  const pageGroups = new Map<number, PdfLine[]>();
+  for (const line of sectionLines) {
+    if (!pageGroups.has(line.pageNum)) pageGroups.set(line.pageNum, []);
+    pageGroups.get(line.pageNum)!.push(line);
+  }
 
-      // Determine debit vs credit
-      const upperDesc = description.toUpperCase();
-      const isCredit =
-        upperDesc.includes('TRF.') ||
-        upperDesc.includes('TRANSFERENCIA') ||
-        upperDesc.includes('VENCIMENTO') ||
-        upperDesc.includes('SALARIO') ||
-        upperDesc.includes('REEMBOLSO') ||
-        upperDesc.includes('JOANA BARROS'); // specific known credit
+  for (const [, pgLines] of [...pageGroups.entries()].sort((a, b) => a[0] - b[0])) {
+    // Sort by y descending (top of page first = higher y values first in pdfjs)
+    pgLines.sort((a, b) => b.y - a.y);
 
-      // Check if amounts.length indicates both debit and credit columns
-      if (amounts.length >= 3) {
-        const secondLast = parseMillenniumNumber(amounts[amounts.length - 2]);
-        const thirdLast = parseMillenniumNumber(amounts[amounts.length - 3]);
-        // With the column format, position matters
-        if (isCredit) {
-          credit = secondLast;
-        } else {
-          debit = secondLast;
-        }
-      } else {
-        if (isCredit) {
-          credit = amount;
-        } else {
-          debit = amount;
-        }
+    for (let i = 0; i < pgLines.length; i++) {
+      const line = pgLines[i];
+
+      // Skip section headers, totals, SALDO lines
+      if (
+        /SALDO\s+(INICIAL|FINAL)/i.test(line.text) ||
+        /DATA\s+LANC/i.test(line.text) ||
+        /DESCRITIVO/i.test(line.text) ||
+        /MOEDA:\s+EUR/i.test(line.text) ||
+        /EXTRATO\s+DE/i.test(line.text) ||
+        /^N\.\s+\d+/i.test(line.text.trim()) ||
+        /^CONTA\s+MILLENNIUM/i.test(line.text.trim())
+      ) {
+        continue;
       }
-    } else if (amounts.length === 1) {
-      balance = parseMillenniumNumber(amounts[0]);
-    }
 
-    transactions.push({
-      id: '',
-      date: dateStr,
-      value_date: valueDateStr,
-      description,
-      debit,
-      credit,
-      balance,
-      bank: 'millennium',
-      owner: 'Mariana',
-      category: null,
-      subcategory: null,
-      status: 'pending',
-      import_batch: importBatch,
-      created_at: new Date().toISOString(),
-    });
+      // Check if this is a data line (has 2 dates at x < 110)
+      const dateItems = line.items.filter(
+        (i) => i.x < 110 && /^\d{1,2}\.\d{2}$/.test(i.str.trim())
+      );
+
+      if (dateItems.length >= 2) {
+        // This is a data line — find description line just above it
+        // The description line should be the previous non-data line on this page
+        // with items starting at x ≈ 114
+        let description = '';
+        for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
+          const prevLine = pgLines[j];
+          // Description line: items start at x ≥ 100, no dates at x < 110
+          const prevDateItems = prevLine.items.filter(
+            (pi) => pi.x < 110 && /^\d{1,2}\.\d{2}$/.test(pi.str.trim())
+          );
+          if (prevDateItems.length === 0) {
+            const prevText = prevLine.items
+              .filter((pi) => pi.x >= 100 && !/^\d+$/.test(pi.str.trim()))
+              .map((pi) => pi.str)
+              .join(' ')
+              .trim();
+            if (
+              prevText.length > 2 &&
+              !/(SALDO|DATA|DEBITO|CREDITO|MOEDA|EXTRATO|CONTA)/i.test(prevText)
+            ) {
+              description = prevText;
+              break;
+            }
+          }
+        }
+
+        if (!description || description.length < 2) continue;
+
+        const parsed = parseMillenniumDataLine(line.items);
+        if (!parsed) continue;
+
+        transactions.push({
+          id: '',
+          date: formatDate(parsed.date1, year),
+          value_date: formatDate(parsed.date2, year),
+          description: description.replace(/\s+/g, ' ').trim(),
+          debit: parsed.debit,
+          credit: parsed.credit,
+          balance: parsed.balance,
+          bank: 'millennium',
+          owner: 'Mariana',
+          category: null,
+          subcategory: null,
+          status: 'pending',
+          import_batch: importBatch,
+          created_at: new Date().toISOString(),
+        });
+      }
+    }
   }
 
   return transactions;
