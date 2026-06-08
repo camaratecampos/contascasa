@@ -1,4 +1,4 @@
-import { extractPdfLines, type PdfLine } from './pdf-extract';
+import type { PdfLine } from './pdf-extract';
 import type { NewTransaction } from '../schema';
 
 function parseEuropeanNumber(str: string): number {
@@ -83,8 +83,7 @@ function parseAmountsFromLine(
   return { debit, credit, balance, description };
 }
 
-export async function parseNovoBancoPdf(buffer: Buffer, importBatch: string): Promise<NewTransaction[]> {
-  const lines = await extractPdfLines(buffer);
+export async function parseNovoBancoFromLines(lines: PdfLine[], importBatch: string): Promise<NewTransaction[]> {
   const transactions: NewTransaction[] = [];
 
   let inSection = false;

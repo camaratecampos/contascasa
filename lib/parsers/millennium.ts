@@ -1,4 +1,4 @@
-import { extractPdfLines, type PdfLine } from './pdf-extract';
+import type { PdfLine } from './pdf-extract';
 import type { NewTransaction } from '../schema';
 
 // Millennium amounts use period as decimal: "1 042.47" or "86.04"
@@ -83,8 +83,7 @@ const STOP_SECTIONS = [
   /RESUMO\s+DO\s+EXTRATO/i,
 ];
 
-export async function parseMillenniumPdf(buffer: Buffer, importBatch: string): Promise<NewTransaction[]> {
-  const lines = await extractPdfLines(buffer);
+export async function parseMillenniumFromLines(lines: PdfLine[], importBatch: string): Promise<NewTransaction[]> {
   const year = extractYear(lines);
   const transactions: NewTransaction[] = [];
 
