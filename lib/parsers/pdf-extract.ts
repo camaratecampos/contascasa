@@ -50,17 +50,14 @@ export interface PdfLine {
 export async function extractPdfLines(buffer: Buffer): Promise<PdfLine[]> {
   applyPolyfills();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs' as any);
-
-  // Point to the worker file so Node.js/Vercel can find it
-  // require.resolve gives the absolute path; pdfjs uses worker_threads in Node.js
+  // pdfjs-dist 3.x uses CommonJS .js build
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const workerPath = require('path').resolve(
-    require('path').dirname(require.resolve('pdfjs-dist/package.json')),
-    'legacy/build/pdf.worker.mjs'
+  const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+
+  // Disable worker — use fake/synchronous worker in Node.js
+  pdfjsLib.GlobalWorkerOptions.workerSrc = require.resolve(
+    'pdfjs-dist/legacy/build/pdf.worker.js'
   );
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `file://${workerPath}`;
 
   const pdf = await pdfjsLib.getDocument({
     data: new Uint8Array(buffer),
