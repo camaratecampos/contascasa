@@ -54,9 +54,13 @@ export async function extractPdfLines(buffer: Buffer): Promise<PdfLine[]> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
 
-  // Disable worker — use fake/synchronous worker in Node.js
-  pdfjsLib.GlobalWorkerOptions.workerSrc = require.resolve(
-    'pdfjs-dist/legacy/build/pdf.worker.js'
+  // Construct the worker path via process.cwd() to avoid webpack intercepting
+  // require.resolve (which would return a numeric module ID instead of a file path)
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require('path') as typeof import('path');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = path.join(
+    process.cwd(),
+    'node_modules/pdfjs-dist/legacy/build/pdf.worker.js'
   );
 
   const pdf = await pdfjsLib.getDocument({
