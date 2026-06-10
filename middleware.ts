@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-async function getExpectedToken(): Promise<string> {
-  const password = process.env.APP_PASSWORD || 'contascasa2026';
-  const secret = process.env.SESSION_SECRET || 'contascasa-secret-2026';
+async function getExpectedToken(): Promise<string | null> {
+  const password = process.env.APP_PASSWORD;
+  const secret = process.env.SESSION_SECRET;
+  // Fail closed: without configured credentials, no session can be valid
+  if (!password || !secret) return null;
   const encoder = new TextEncoder();
   const data = encoder.encode(password + secret);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -23,7 +25,7 @@ export async function middleware(request: NextRequest) {
   const session = request.cookies.get('session');
   const expectedToken = await getExpectedToken();
 
-  if (!session || session.value !== expectedToken) {
+  if (!expectedToken || !session || session.value !== expectedToken) {
     const loginUrl = new URL('/login', request.url);
     return NextResponse.redirect(loginUrl);
   }

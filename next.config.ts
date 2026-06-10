@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['pdf-parse', 'pdfjs-dist'],
+  serverExternalPackages: ['pdfjs-dist'],
   // Force Vercel to include the pdfjs worker file in the serverless bundle.
   // Without this, Vercel's file tracing omits pdf.worker.js because it's
   // only loaded dynamically at runtime (not via static import analysis).

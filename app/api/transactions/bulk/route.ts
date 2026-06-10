@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { transactions } from '@/lib/schema';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, ne, like } from 'drizzle-orm';
 
 export async function PATCH(request: Request) {
   try {
@@ -17,24 +17,19 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ updated: ids.length });
     }
 
-    // Otherwise update by filter
-    const conditions = [];
+    // Otherwise update by filter — only the "confirm all" flow is supported here
+    if (status !== 'confirmed') {
+      return NextResponse.json({ error: 'Pedido inválido' }, { status: 400 });
+    }
+
+    const conditions = [ne(transactions.status, 'confirmed')];
     if (owner) conditions.push(eq(transactions.owner, owner));
     if (bank) conditions.push(eq(transactions.bank, bank));
-    if (month) {
-      const { like } = await import('drizzle-orm');
-      conditions.push(like(transactions.date, `${month}%`));
-    }
-    if (status === 'confirmed') {
-      const { ne } = await import('drizzle-orm');
-      conditions.push(ne(transactions.status, 'confirmed'));
-    }
+    if (month) conditions.push(like(transactions.date, `${month}%`));
 
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
-
-    const result = await db.update(transactions)
+    await db.update(transactions)
       .set({ status: 'confirmed' })
-      .where(where);
+      .where(and(...conditions));
 
     return NextResponse.json({ ok: true });
   } catch (err) {
