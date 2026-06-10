@@ -3,7 +3,8 @@ import { parseTransactions } from '@/lib/parsers';
 import { classifyTransactions } from '@/lib/classifier';
 import { db } from '@/lib/db';
 import { transactions } from '@/lib/schema';
-import { filterDuplicates } from '@/lib/duplicate';
+import { filterDuplicates, dateBoundsOf } from '@/lib/duplicate';
+import { and, gte, lte } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 
 export async function POST(request: Request) {
@@ -28,13 +29,19 @@ export async function POST(request: Request) {
     // Classify transactions using rules
     const classified = await classifyTransactions(allParsed);
 
-    // Check for duplicates against existing DB records
+    // Check for duplicates — only fetch existing rows within the date window
+    // of the incoming batch to avoid a full-table scan as the DB grows.
+    const bounds = dateBoundsOf(classified);
     const existingRaw = await db.select({
       date: transactions.date,
       debit: transactions.debit,
       credit: transactions.credit,
       description: transactions.description,
-    }).from(transactions);
+    }).from(transactions).where(
+      bounds
+        ? and(gte(transactions.date, bounds.minDate), lte(transactions.date, bounds.maxDate))
+        : undefined
+    );
 
     const { unique, duplicateCount } = filterDuplicates(classified, existingRaw);
 

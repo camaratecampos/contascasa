@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { transactions } from '@/lib/schema';
-import { filterDuplicates } from '@/lib/duplicate';
+import { filterDuplicates, dateBoundsOf } from '@/lib/duplicate';
+import { and, gte, lte } from 'drizzle-orm';
 import type { NewTransaction } from '@/lib/schema';
 
 export async function POST(request: Request) {
@@ -13,13 +14,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 });
     }
 
-    // Final duplicate check against DB
+    // Final duplicate check — scoped to the date range of the incoming batch
+    const bounds = dateBoundsOf(incoming);
     const existingRaw = await db.select({
       date: transactions.date,
       debit: transactions.debit,
       credit: transactions.credit,
       description: transactions.description,
-    }).from(transactions);
+    }).from(transactions).where(
+      bounds
+        ? and(gte(transactions.date, bounds.minDate), lte(transactions.date, bounds.maxDate))
+        : undefined
+    );
 
     const { unique, duplicateCount } = filterDuplicates(incoming, existingRaw);
 

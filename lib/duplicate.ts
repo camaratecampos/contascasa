@@ -1,6 +1,5 @@
 import type { NewTransaction } from './schema';
 
-// Simple string similarity using Levenshtein distance
 function levenshtein(a: string, b: string): number {
   const m = a.length;
   const n = b.length;
@@ -61,4 +60,23 @@ export function filterDuplicates(
   }
 
   return { unique, duplicateCount };
+}
+
+// Returns the min/max date range across a list of transactions, with an
+// optional padding of extra days on each side.
+export function dateBoundsOf(
+  txs: Pick<NewTransaction, 'date'>[],
+  paddingDays = 3
+): { minDate: string; maxDate: string } | null {
+  if (txs.length === 0) return null;
+  const sorted = txs.map(t => t.date).sort();
+  const shift = (dateStr: string, days: number): string => {
+    const d = new Date(dateStr);
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  };
+  return {
+    minDate: shift(sorted[0], -paddingDays),
+    maxDate: shift(sorted[sorted.length - 1], paddingDays),
+  };
 }
