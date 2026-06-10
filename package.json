@@ -16,12 +16,18 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
     "@libsql/client": "^0.14.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "drizzle-orm": "^0.38.3",
+    "geist": "^1.7.2",
+    "lucide-react": "^1.17.0",
     "nanoid": "^5.0.9",
     "next": "^15.3.3",
     "pdfjs-dist": "^3.11.174",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss-animate": "^1.0.7",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

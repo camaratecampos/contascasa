@@ -2,67 +2,50 @@
 
 import { useState, useEffect } from 'react';
 import NavBar from '@/components/NavBar';
-import { CATEGORIES } from '@/lib/seed-rules';
+import { CATEGORIES } from '@/lib/classifier';
+import { categoryColor } from '@/lib/categories';
 import type { ClassificationRule } from '@/lib/schema';
+import { Trash2, Plus, Database } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 export default function RulesPage() {
-  const [rules, setRules] = useState<ClassificationRule[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [keyword, setKeyword] = useState('');
+  const [rules,    setRules]    = useState<ClassificationRule[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [keyword,  setKeyword]  = useState('');
   const [category, setCategory] = useState('');
-  const [subcategory, setSubcategory] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [seeding, setSeeding] = useState(false);
+  const [subcat,   setSubcat]   = useState('');
+  const [saving,   setSaving]   = useState(false);
+  const [seeding,  setSeeding]  = useState(false);
+  const [error,    setError]    = useState('');
 
   async function fetchRules() {
     setLoading(true);
     try {
-      const res = await fetch('/api/rules');
-      const data = await res.json();
-      setRules(data.rules || []);
-    } catch {
-      setError('Erro ao carregar regras');
-    } finally {
-      setLoading(false);
-    }
+      const d = await fetch('/api/rules').then(r => r.json());
+      setRules(d.rules || []);
+    } catch { setError('Erro ao carregar regras'); }
+    finally  { setLoading(false); }
   }
 
-  useEffect(() => {
-    fetchRules();
-  }, []);
+  useEffect(() => { fetchRules(); }, []);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!keyword || !category) return;
-
-    setSaving(true);
-    setError('');
+    setSaving(true); setError('');
     try {
       const res = await fetch('/api/rules', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword, category, subcategory }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword, category, subcategory: subcat }),
       });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || 'Erro ao criar regra');
-        return;
-      }
-
-      setKeyword('');
-      setCategory('');
-      setSubcategory('');
+      if (!res.ok) { setError((await res.json()).error || 'Erro'); return; }
+      setKeyword(''); setCategory(''); setSubcat('');
       fetchRules();
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
   async function handleDelete(id: string) {
     if (!confirm('Eliminar esta regra?')) return;
-
     await fetch(`/api/rules?id=${id}`, { method: 'DELETE' });
     fetchRules();
   }
@@ -70,127 +53,113 @@ export default function RulesPage() {
   async function handleSeed() {
     setSeeding(true);
     try {
-      const res = await fetch('/api/seed', { method: 'POST' });
+      const res  = await fetch('/api/seed', { method: 'POST' });
       const data = await res.json();
-      if (res.ok) {
-        alert(`Base de dados inicializada! ${data.seeded} regras criadas, ${data.skipped} já existiam.`);
-        fetchRules();
-      } else {
-        alert('Erro: ' + (data.error || 'Erro desconhecido'));
-      }
-    } finally {
-      setSeeding(false);
-    }
+      if (res.ok) { fetchRules(); }
+      else alert('Erro: ' + (data.error || 'desconhecido'));
+    } finally { setSeeding(false); }
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-background">
       <NavBar />
-      <main className="flex-1 p-6 overflow-auto">
-        <div className="max-w-4xl mx-auto">
+      <main className="flex-1 min-w-0 p-6 overflow-auto">
+        <div className="max-w-3xl mx-auto">
+          {/* Header */}
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Regras de Classificação</h2>
-            <button
-              onClick={handleSeed}
-              disabled={seeding}
-              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              {seeding ? 'A inicializar...' : '🌱 Inicializar BD'}
+            <div>
+              <h1 className="text-xl font-semibold text-foreground">Regras de Classificação</h1>
+              <p className="text-sm text-muted-foreground mt-0.5">{rules.length} regras configuradas</p>
+            </div>
+            <button onClick={handleSeed} disabled={seeding}
+              className="h-8 px-3 rounded-md border border-border text-xs text-muted-foreground
+                hover:text-foreground hover:bg-white/5 disabled:opacity-50 transition-colors flex items-center gap-1.5">
+              <Database className="w-3.5 h-3.5" />
+              {seeding ? 'A inicializar…' : 'Inicializar BD'}
             </button>
           </div>
 
-          {/* Add Rule Form */}
-          <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
-            <h3 className="font-semibold text-gray-900 mb-4">Adicionar Nova Regra</h3>
-            <form onSubmit={handleAdd} className="grid grid-cols-4 gap-3">
+          {/* Add form */}
+          <div className="rounded-xl border border-border bg-card p-5 mb-5">
+            <h2 className="text-sm font-semibold text-foreground mb-4">Adicionar regra</h2>
+            <form onSubmit={handleAdd} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-3 items-end">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Palavra-chave</label>
-                <input
-                  type="text"
-                  value={keyword}
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+                  Palavra-chave
+                </label>
+                <input type="text" value={keyword}
                   onChange={e => setKeyword(e.target.value.toUpperCase())}
-                  placeholder="Ex: PINGO DOCE"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm uppercase"
-                  required
-                />
+                  placeholder="EX: PINGO DOCE" required
+                  className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground uppercase
+                    placeholder:normal-case placeholder:text-muted-foreground/40
+                    focus:outline-none focus:ring-2 focus:ring-ring" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Categoria</label>
-                <select
-                  value={category}
-                  onChange={e => setCategory(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  required
-                >
-                  <option value="">-- Seleccionar --</option>
-                  {CATEGORIES.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+                  Categoria
+                </label>
+                <select value={category} onChange={e => setCategory(e.target.value)} required
+                  className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground
+                    focus:outline-none focus:ring-2 focus:ring-ring [&>option]:bg-[#1a1a1f]">
+                  <option value="">— Seleccionar —</option>
+                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Sub-categoria</label>
-                <input
-                  type="text"
-                  value={subcategory}
-                  onChange={e => setSubcategory(e.target.value)}
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+                  Sub-categoria
+                </label>
+                <input type="text" value={subcat} onChange={e => setSubcat(e.target.value)}
                   placeholder="Opcional"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                />
+                  className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground
+                    placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring" />
               </div>
-              <div className="flex items-end">
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="w-full py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                >
-                  {saving ? 'A adicionar...' : 'Adicionar'}
-                </button>
-              </div>
+              <button type="submit" disabled={saving}
+                className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-semibold
+                  hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-1.5 whitespace-nowrap">
+                <Plus className="w-3.5 h-3.5" />
+                {saving ? '…' : 'Adicionar'}
+              </button>
             </form>
-            {error && (
-              <p className="text-red-600 text-sm mt-2">{error}</p>
-            )}
+            {error && <p className="mt-2 text-xs text-rose-400">{error}</p>}
           </div>
 
-          {/* Rules List */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-100 bg-gray-50">
-              <span className="text-sm font-medium text-gray-600">{rules.length} regras</span>
-            </div>
+          {/* Rules table */}
+          <div className="rounded-xl border border-border bg-card overflow-hidden">
             {loading ? (
-              <div className="py-8 text-center text-gray-400">A carregar...</div>
+              <div className="py-10 text-center text-sm text-muted-foreground">A carregar…</div>
             ) : rules.length === 0 ? (
-              <div className="py-8 text-center text-gray-400">
-                <p>Nenhuma regra encontrada.</p>
-                <p className="text-sm mt-1">Clique em "Inicializar BD" para criar as regras predefinidas.</p>
+              <div className="py-10 text-center">
+                <p className="text-sm text-muted-foreground">Nenhuma regra. Clique em "Inicializar BD" para criar as predefinidas.</p>
               </div>
             ) : (
               <table className="w-full">
-                <thead className="border-b border-gray-100">
-                  <tr>
-                    <th className="text-left py-2 px-4 text-xs font-medium text-gray-500 uppercase">Palavra-chave</th>
-                    <th className="text-left py-2 px-4 text-xs font-medium text-gray-500 uppercase">Categoria</th>
-                    <th className="text-left py-2 px-4 text-xs font-medium text-gray-500 uppercase">Sub-categoria</th>
-                    <th className="text-right py-2 px-4 text-xs font-medium text-gray-500 uppercase">Ação</th>
+                <thead>
+                  <tr className="border-b border-border">
+                    {['Palavra-chave', 'Categoria', 'Sub-categoria', ''].map(h => (
+                      <th key={h} className="py-2.5 px-4 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {h}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {rules.map(rule => (
-                    <tr key={rule.id} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="py-2 px-4 text-sm font-mono text-gray-900">{rule.keyword}</td>
-                      <td className="py-2 px-4">
-                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                    <tr key={rule.id} className="border-b border-border hover:bg-white/[0.02] transition-colors">
+                      <td className="py-2.5 px-4 font-mono text-xs text-foreground">{rule.keyword}</td>
+                      <td className="py-2.5 px-4">
+                        <span className={cn(
+                          'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border',
+                          categoryColor(rule.category)
+                        )}>
                           {rule.category}
                         </span>
                       </td>
-                      <td className="py-2 px-4 text-sm text-gray-500">{rule.subcategory || '-'}</td>
-                      <td className="py-2 px-4 text-right">
-                        <button
-                          onClick={() => handleDelete(rule.id)}
-                          className="text-red-500 hover:text-red-700 text-sm"
-                        >
-                          Eliminar
+                      <td className="py-2.5 px-4 text-xs text-muted-foreground">{rule.subcategory || '—'}</td>
+                      <td className="py-2.5 px-4 text-right">
+                        <button onClick={() => handleDelete(rule.id)}
+                          className="p-1.5 rounded-md text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 transition-colors">
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </td>
                     </tr>

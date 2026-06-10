@@ -2,8 +2,10 @@
 
 import { useState } from 'react';
 import type { NewTransaction } from '@/lib/schema';
+import { categoryColor } from '@/lib/categories';
+import { cn } from '@/lib/utils';
 
-interface ImportPreviewProps {
+interface Props {
   transactions: NewTransaction[];
   filtered: number;
   duplicates: number;
@@ -11,112 +13,107 @@ interface ImportPreviewProps {
   onCancel: () => void;
 }
 
-function formatCurrency(value: number | null | undefined): string {
-  if (value == null) return '-';
-  return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(value);
+function fmt(v: number | null | undefined) {
+  if (v == null) return '—';
+  return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(v);
 }
 
-export default function ImportPreview({ transactions, filtered, duplicates, onConfirm, onCancel }: ImportPreviewProps) {
+export default function ImportPreview({ transactions, filtered, duplicates, onConfirm, onCancel }: Props) {
   const [confirming, setConfirming] = useState(false);
 
-  async function handleConfirm() {
+  async function go() {
     setConfirming(true);
-    try {
-      await onConfirm();
-    } finally {
-      setConfirming(false);
-    }
+    try { await onConfirm(); } finally { setConfirming(false); }
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="p-6 border-b border-gray-100 bg-blue-50">
-        <h3 className="text-lg font-semibold text-gray-900 mb-3">Pré-visualização da Importação</h3>
-        <div className="flex gap-6">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-blue-600">{transactions.length}</div>
-            <div className="text-sm text-gray-600">Transações novas</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-gray-400">{filtered}</div>
-            <div className="text-sm text-gray-600">Filtradas (ruído)</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-orange-400">{duplicates}</div>
-            <div className="text-sm text-gray-600">Duplicadas</div>
-          </div>
-        </div>
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      {/* Summary bar */}
+      <div className="px-5 py-4 border-b border-border flex flex-wrap items-center gap-6">
+        <Stat label="Novas transações" value={transactions.length} color="violet" />
+        <Stat label="Duplicadas ignoradas" value={duplicates} color="amber" />
+        <Stat label="Filtradas (ruído)" value={filtered} color="zinc" />
       </div>
 
-      <div className="overflow-x-auto max-h-96">
+      {/* Table */}
+      <div className="overflow-auto max-h-96">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 sticky top-0">
+          <thead className="sticky top-0 bg-card border-b border-border">
             <tr>
-              <th className="text-left py-2 px-3 font-medium text-gray-600">Data</th>
-              <th className="text-left py-2 px-3 font-medium text-gray-600">Descrição</th>
-              <th className="text-left py-2 px-3 font-medium text-gray-600">Banco</th>
-              <th className="text-left py-2 px-3 font-medium text-gray-600">Quem</th>
-              <th className="text-right py-2 px-3 font-medium text-gray-600">Valor</th>
-              <th className="text-left py-2 px-3 font-medium text-gray-600">Categoria</th>
+              {['Data', 'Descrição', 'Banco', 'Quem', 'Valor', 'Categoria'].map(h => (
+                <th key={h} className={cn('py-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground',
+                  h === 'Valor' ? 'text-right' : 'text-left')}>{h}</th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {transactions.slice(0, 100).map((tx, idx) => (
-              <tr key={idx} className="border-b border-gray-50 hover:bg-gray-50">
-                <td className="py-1.5 px-3 text-gray-600 whitespace-nowrap">{tx.date}</td>
-                <td className="py-1.5 px-3 text-gray-900 max-w-xs">
-                  <div className="truncate" title={tx.description}>{tx.description}</div>
+            {transactions.slice(0, 100).map((tx, i) => (
+              <tr key={i} className="border-b border-border hover:bg-white/[0.02] transition-colors">
+                <td className="py-1.5 px-3 text-xs text-muted-foreground whitespace-nowrap tabular-nums">{tx.date}</td>
+                <td className="py-1.5 px-3 max-w-[240px]">
+                  <p className="text-sm text-foreground truncate" title={tx.description}>{tx.description}</p>
                 </td>
                 <td className="py-1.5 px-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    tx.bank === 'novobanco' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
-                  }`}>
+                  <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded',
+                    tx.bank === 'novobanco' ? 'bg-blue-500/15 text-blue-300' : 'bg-violet-500/15 text-violet-300')}>
                     {tx.bank === 'novobanco' ? 'NB' : 'BCP'}
                   </span>
                 </td>
                 <td className="py-1.5 px-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    tx.owner === 'Rodrigo' ? 'bg-cyan-100 text-cyan-700' : 'bg-pink-100 text-pink-700'
-                  }`}>
+                  <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded',
+                    tx.owner === 'Rodrigo' ? 'bg-cyan-500/15 text-cyan-300' : 'bg-pink-500/15 text-pink-300')}>
                     {tx.owner}
                   </span>
                 </td>
-                <td className="py-1.5 px-3 text-right font-medium">
-                  {tx.debit != null ? (
-                    <span className="text-red-600">-{formatCurrency(tx.debit)}</span>
-                  ) : tx.credit != null ? (
-                    <span className="text-green-600">+{formatCurrency(tx.credit)}</span>
-                  ) : '-'}
+                <td className="py-1.5 px-3 text-right tabular-nums text-sm font-semibold whitespace-nowrap">
+                  {tx.debit  != null ? <span className="text-rose-400">−{fmt(tx.debit)}</span>
+                 : tx.credit != null ? <span className="text-emerald-400">+{fmt(tx.credit)}</span>
+                 : '—'}
                 </td>
-                <td className="py-1.5 px-3 text-gray-500">{tx.category || '-'}</td>
+                <td className="py-1.5 px-3">
+                  {tx.category ? (
+                    <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border', categoryColor(tx.category))}>
+                      {tx.category}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground/40">—</span>
+                  )}
+                </td>
               </tr>
             ))}
             {transactions.length > 100 && (
-              <tr>
-                <td colSpan={6} className="py-2 px-3 text-center text-gray-500 text-sm">
-                  ... e mais {transactions.length - 100} transações
-                </td>
-              </tr>
+              <tr><td colSpan={6} className="py-2 px-3 text-center text-xs text-muted-foreground">
+                + {transactions.length - 100} transações adicionais
+              </td></tr>
             )}
           </tbody>
         </table>
       </div>
 
-      <div className="p-4 bg-gray-50 border-t border-gray-100 flex gap-3 justify-end">
-        <button
-          onClick={onCancel}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-        >
+      {/* Actions */}
+      <div className="px-5 py-3 border-t border-border flex items-center justify-end gap-2">
+        <button onClick={onCancel}
+          className="h-8 px-4 rounded-md border border-border text-xs text-foreground hover:bg-white/5 transition-colors">
           Cancelar
         </button>
-        <button
-          onClick={handleConfirm}
-          disabled={confirming || transactions.length === 0}
-          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
+        <button onClick={go} disabled={confirming || transactions.length === 0}
+          className="h-8 px-4 rounded-md bg-primary text-primary-foreground text-xs font-semibold
+            hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
           {confirming ? 'A importar...' : `Importar ${transactions.length} transações`}
         </button>
       </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, color }: { label: string; value: number; color: string }) {
+  const c: Record<string, string> = {
+    violet: 'text-violet-400', amber: 'text-amber-400', zinc: 'text-zinc-400',
+  };
+  return (
+    <div>
+      <p className={cn('text-xl font-semibold tabular-nums', c[color] ?? 'text-foreground')}>{value}</p>
+      <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
     </div>
   );
 }

@@ -2,31 +2,31 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { TrendingDown, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [show,     setShow]     = useState(false);
+  const [error,    setError]    = useState('');
+  const [loading,  setLoading]  = useState(false);
   const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError('');
-
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
       });
-
       if (res.ok) {
         router.push('/dashboard');
         router.refresh();
       } else {
-        const data = await res.json();
-        setError(data.error || 'Palavra-passe incorreta');
+        const d = await res.json();
+        setError(d.error || 'Palavra-passe incorreta');
       }
     } catch {
       setError('Erro de ligação');
@@ -36,41 +36,61 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-navy-800" style={{ background: '#0f2035' }}>
-      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Contas Casa</h1>
-          <p className="text-gray-500 mt-2">Gestão de despesas domésticas</p>
+    <div className="min-h-screen flex items-center justify-center bg-background px-4">
+      <div className="w-full max-w-sm">
+        {/* Logo */}
+        <div className="flex items-center gap-3 justify-center mb-8">
+          <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
+            <TrendingDown className="w-5 h-5 text-primary-foreground" />
+          </div>
+          <div>
+            <p className="text-base font-semibold text-foreground leading-none">Contas Casa</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Rodrigo · Mariana</p>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-              Palavra-passe
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Introduza a palavra-passe"
-              required
-            />
-          </div>
+        {/* Card */}
+        <div className="rounded-xl border border-border bg-card p-7">
+          <h1 className="text-lg font-semibold text-foreground mb-1">Bem-vindo</h1>
+          <p className="text-sm text-muted-foreground mb-6">Introduza a palavra-passe para aceder</p>
 
-          {error && (
-            <p className="text-red-600 text-sm bg-red-50 px-3 py-2 rounded-lg">{error}</p>
-          )}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground" htmlFor="pwd">
+                Palavra-passe
+              </label>
+              <div className="relative">
+                <input
+                  id="pwd"
+                  type={show ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  className="w-full h-10 rounded-lg border border-border bg-background px-3 pr-10 text-sm
+                    text-foreground placeholder:text-muted-foreground/40
+                    focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <button type="button" onClick={() => setShow(s => !s)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                  {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {loading ? 'A entrar...' : 'Entrar'}
-          </button>
-        </form>
+            {error && (
+              <p className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-lg px-3 py-2">
+                {error}
+              </p>
+            )}
+
+            <button type="submit" disabled={loading}
+              className="w-full h-10 rounded-lg bg-primary text-primary-foreground text-sm font-semibold
+                hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+              {loading ? 'A entrar...' : 'Entrar'}
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );

@@ -1,24 +1,20 @@
 'use client';
 
-import { CATEGORIES } from '@/lib/seed-rules';
+import { CATEGORIES } from '@/lib/classifier';
 
-interface CategorySelectProps {
-  value: string;
-  onChange: (value: string) => void;
-  className?: string;
-}
+interface Props { value: string; onChange: (v: string) => void; className?: string; }
 
-export default function CategorySelect({ value, onChange, className = '' }: CategorySelectProps) {
+export default function CategorySelect({ value, onChange, className = '' }: Props) {
   return (
     <select
       value={value || ''}
       onChange={e => onChange(e.target.value)}
-      className={`border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${className}`}
+      className={`h-7 rounded-md border border-border bg-card px-2 text-xs text-foreground
+        focus:outline-none focus:ring-1 focus:ring-ring
+        [&>option]:bg-[#1a1a1f] ${className}`}
     >
-      <option value="">-- Categoria --</option>
-      {CATEGORIES.map(cat => (
-        <option key={cat} value={cat}>{cat}</option>
-      ))}
+      <option value="">— Categoria —</option>
+      {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
     </select>
   );
 }
