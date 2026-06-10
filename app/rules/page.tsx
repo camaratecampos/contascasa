@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import NavBar from '@/components/NavBar';
-import { CATEGORIES } from '@/lib/classifier';
-import { categoryColor } from '@/lib/categories';
+import { CATEGORIES, categoryColor } from '@/lib/categories';
 import type { ClassificationRule } from '@/lib/schema';
 import { Trash2, Plus, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';

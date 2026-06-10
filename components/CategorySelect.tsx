@@ -1,6 +1,6 @@
 'use client';
 
-import { CATEGORIES } from '@/lib/classifier';
+import { CATEGORIES } from '@/lib/categories';
 
 interface Props { value: string; onChange: (v: string) => void; className?: string; }
 

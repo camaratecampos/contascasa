@@ -3,21 +3,10 @@ import { db } from './db';
 import { classification_rules } from './schema';
 import type { ClassificationRule } from './schema';
 
-export const CATEGORIES = [
-  'Casa',
-  'Saúde',
-  'Supermercado',
-  'Restaurantes',
-  'Carro',
-  'Escola',
-  'Miúdos',
-  'Viagens',
-  'Vestuário',
-  'Outros',
-  'Ordenados',
-] as const;
+import { CATEGORIES } from './categories';
 
-export type Category = typeof CATEGORIES[number];
+export { CATEGORIES };
+export type { Category } from './categories';
 
 export interface ClassificationResult {
   category: string;

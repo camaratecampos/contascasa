@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import NavBar from '@/components/NavBar';
 import TransactionRow from '@/components/TransactionRow';
 import type { Transaction } from '@/lib/schema';
-import { CATEGORIES } from '@/lib/classifier';
+import { CATEGORIES } from '@/lib/categories';
 import { ChevronUp, ChevronDown, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -45,6 +45,14 @@ export default function ReviewPage() {
       body: JSON.stringify(updates),
     });
     setTransactions(prev => prev.map(tx => tx.id === id ? { ...tx, ...updates } : tx));
+  }
+
+  async function handleDelete(id: string) {
+    const res = await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      setTransactions(prev => prev.filter(tx => tx.id !== id));
+      setTotal(t => Math.max(0, t - 1));
+    }
   }
 
   async function handleConfirmAll() {
@@ -132,8 +140,9 @@ export default function ReviewPage() {
                     { label: 'Categoria' },
                     { label: 'Sub-cat.' },
                     { label: 'Estado' },
-                  ].map(col => (
-                    <th key={col.label}
+                    { label: '' },
+                  ].map((col, i) => (
+                    <th key={i}
                       className={cn('py-2.5 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground',
                         col.right ? 'text-right' : 'text-left')}
                     >
@@ -154,11 +163,11 @@ export default function ReviewPage() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} className="py-10 text-center text-sm text-muted-foreground">A carregar...</td></tr>
+                  <tr><td colSpan={9} className="py-10 text-center text-sm text-muted-foreground">A carregar...</td></tr>
                 ) : transactions.length === 0 ? (
-                  <tr><td colSpan={8} className="py-10 text-center text-sm text-muted-foreground">Nenhuma transação encontrada</td></tr>
+                  <tr><td colSpan={9} className="py-10 text-center text-sm text-muted-foreground">Nenhuma transação encontrada</td></tr>
                 ) : transactions.map(tx => (
-                  <TransactionRow key={tx.id} transaction={tx} onUpdate={handleUpdate} />
+                  <TransactionRow key={tx.id} transaction={tx} onUpdate={handleUpdate} onDelete={handleDelete} />
                 ))}
               </tbody>
             </table>

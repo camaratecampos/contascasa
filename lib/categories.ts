@@ -1,3 +1,20 @@
+// Client-safe category constants — no server-only imports here.
+export const CATEGORIES = [
+  'Casa',
+  'Saúde',
+  'Supermercado',
+  'Restaurantes',
+  'Carro',
+  'Escola',
+  'Miúdos',
+  'Viagens',
+  'Vestuário',
+  'Outros',
+  'Ordenados',
+] as const;
+
+export type Category = typeof CATEGORIES[number];
+
 // Shared category color map — used across dashboard, review, import, rules.
 export const CATEGORY_COLORS: Record<string, string> = {
   'Casa':          'bg-blue-500/20 text-blue-300 border-blue-500/30',

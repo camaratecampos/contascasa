@@ -3,12 +3,13 @@
 import { useState } from 'react';
 import CategorySelect from './CategorySelect';
 import type { Transaction } from '@/lib/schema';
-import { categoryColor } from '@/lib/categories';
 import { cn } from '@/lib/utils';
+import { Trash2 } from 'lucide-react';
 
 interface TransactionRowProps {
   transaction: Transaction;
   onUpdate: (id: string, updates: Partial<Transaction>) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
 }
 
 function fmt(v: number | null | undefined): string {
@@ -21,10 +22,21 @@ function fmtDate(s: string): string {
   return `${d}/${m}/${y}`;
 }
 
-export default function TransactionRow({ transaction: tx, onUpdate }: TransactionRowProps) {
+export default function TransactionRow({ transaction: tx, onUpdate, onDelete }: TransactionRowProps) {
   const [category,    setCategory]    = useState(tx.category    || '');
   const [subcategory, setSubcategory] = useState(tx.subcategory || '');
-  const [saving, setSaving] = useState(false);
+  const [saving,   setSaving]   = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    if (!confirm(`Eliminar a transação "${tx.description.slice(0, 60)}"?`)) return;
+    setDeleting(true);
+    try {
+      await onDelete(tx.id);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function handleCategory(v: string) {
     setCategory(v);
@@ -108,6 +120,18 @@ export default function TransactionRow({ transaction: tx, onUpdate }: Transactio
             {tx.status === 'confirmed' ? 'Confirmado' : 'Pendente'}
           </span>
         )}
+      </td>
+      {/* Delete */}
+      <td className="py-2.5 px-2 text-right">
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          title="Eliminar transação"
+          className="p-1.5 rounded-md text-muted-foreground/50 opacity-0 group-hover:opacity-100
+            hover:text-rose-400 hover:bg-rose-500/10 disabled:opacity-30 transition-all"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
       </td>
     </tr>
   );

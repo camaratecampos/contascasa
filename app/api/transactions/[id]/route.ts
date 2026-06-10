@@ -63,3 +63,17 @@ export async function PATCH(
     return NextResponse.json({ error: 'Erro ao actualizar' }, { status: 500 });
   }
 }
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    await db.delete(transactions).where(eq(transactions.id, id));
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error('Transaction delete error:', err);
+    return NextResponse.json({ error: 'Erro ao eliminar' }, { status: 500 });
+  }
+}
