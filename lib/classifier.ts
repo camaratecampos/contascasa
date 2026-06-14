@@ -61,7 +61,7 @@ async function classifyBatchByAI(
       messages: [
         {
           role: 'user',
-          content: `Classify these Portuguese bank transactions into one of these categories: ${CATEGORIES.join(', ')}.
+          content: `Classify these Portuguese bank transactions into exactly one of these categories: ${CATEGORIES.join(', ')}.
 
 Transactions (one per line, prefixed by index):
 ${list}

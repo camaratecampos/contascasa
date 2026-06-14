@@ -43,10 +43,7 @@ export const SEED_RULES = [
   // Ordenados
   { keyword: 'TRANSFERENCIA - VENCIMENTO', category: 'Ordenados', subcategory: '' },
   { keyword: 'HIKMA FARMACEUTICA', category: 'Ordenados', subcategory: '' },
-  // Escola
-  { keyword: 'BRAINALIVE', category: 'Escola', subcategory: 'Explicações' },
-  { keyword: 'KLASSIK', category: 'Escola', subcategory: 'Dança' },
-  // Miúdos
+  // Miúdos (former Escola keywords moved here)
   { keyword: 'ORDEM PERMANENTE SEPA+ PARA ANTONIO CAMARATE', category: 'Miúdos', subcategory: '' },
   { keyword: 'ORDEM PERMANENTE SEPA+ MENSAL PARA JOAO MARIA', category: 'Miúdos', subcategory: '' },
   { keyword: 'ORDEM PERMANENTE SEPA+ MENSAL PARA MARIA DA LUZ', category: 'Miúdos', subcategory: '' },
@@ -56,18 +53,6 @@ export const SEED_RULES = [
   { keyword: 'MBWAY IFTHENPAY', category: 'Viagens', subcategory: '' },
 ];
 
-export const CATEGORIES = [
-  'Casa',
-  'Saúde',
-  'Supermercado',
-  'Restaurantes',
-  'Carro',
-  'Escola',
-  'Miúdos',
-  'Viagens',
-  'Vestuário',
-  'Outros',
-  'Ordenados',
-] as const;
-
-export type Category = typeof CATEGORIES[number];
+// Re-export from the canonical source so existing imports still work.
+export { CATEGORIES } from './categories';
+export type { Category } from './categories';
