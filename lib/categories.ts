@@ -11,6 +11,7 @@ export const CATEGORIES = [
   'Presentes',
   'Rendas Recebidas',
   'Contas QF',
+  'Poupança',
   'Outros',
   'Ordenados',
 ] as const;
@@ -30,6 +31,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
   'Presentes':        'bg-purple-500/20 text-purple-300 border-purple-500/30',
   'Rendas Recebidas': 'bg-lime-500/20 text-lime-300 border-lime-500/30',
   'Contas QF':        'bg-sky-500/20 text-sky-300 border-sky-500/30',
+  'Poupança':         'bg-violet-500/20 text-violet-300 border-violet-500/30',
   'Ordenados':        'bg-teal-500/20 text-teal-300 border-teal-500/30',
   'Outros':           'bg-zinc-500/20 text-zinc-300 border-zinc-500/30',
 };
