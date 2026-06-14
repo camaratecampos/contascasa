@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import NavBar from '@/components/NavBar';
 import ImportPreview from '@/components/ImportPreview';
 import type { NewTransaction } from '@/lib/schema';
-import { UploadCloud, FileText } from 'lucide-react';
+import { UploadCloud, FileText, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ParseResult { transactions: NewTransaction[]; filtered: number; duplicates: number; }
@@ -14,8 +14,21 @@ export default function ImportPage() {
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState('');
   const [success,  setSuccess]  = useState('');
-  const [dragging, setDragging] = useState(false);
+  const [dragging,  setDragging]  = useState(false);
+  const [clearing,  setClearing]  = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  async function handleClearAll() {
+    if (!confirm('Tens a certeza? Esta ação elimina TODAS as transações e não pode ser desfeita.')) return;
+    setClearing(true);
+    setError(''); setSuccess('');
+    try {
+      const res = await fetch('/api/transactions/clear', { method: 'DELETE' });
+      if (res.ok) setSuccess('Todas as transações foram eliminadas.');
+      else setError('Erro ao eliminar transações.');
+    } catch { setError('Erro de ligação.'); }
+    finally { setClearing(false); }
+  }
 
   async function handleFiles(files: FileList | File[]) {
     const pdfs = Array.from(files).filter(f => f.name.endsWith('.pdf'));
@@ -50,8 +63,21 @@ export default function ImportPage() {
       <NavBar />
       <main className="flex-1 min-w-0 p-6 overflow-auto">
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-xl font-semibold text-foreground mb-1">Importar Extractos</h1>
-          <p className="text-sm text-muted-foreground mb-6">NovoBanco (Rodrigo) e Millennium BCP (Mariana)</p>
+          <div className="flex items-start justify-between mb-6">
+            <div>
+              <h1 className="text-xl font-semibold text-foreground mb-1">Importar Extractos</h1>
+              <p className="text-sm text-muted-foreground">NovoBanco (Rodrigo) e Millennium BCP (Mariana)</p>
+            </div>
+            <button
+              onClick={handleClearAll}
+              disabled={clearing}
+              className="h-8 px-3 rounded-md border border-rose-500/30 text-xs text-rose-400
+                hover:bg-rose-500/10 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              {clearing ? 'A eliminar…' : 'Limpar tudo'}
+            </button>
+          </div>
 
           {!result && !loading && (
             <div
